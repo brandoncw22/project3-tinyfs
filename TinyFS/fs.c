@@ -63,33 +63,66 @@ union tfs_block {
 
 void tfs_debug()
 { 
-        int i;
-        int b_in_use = 0;
+    union tfs_block block;
+    int i;
 
-	union tfs_block block;
+    // Read and check superblock
+    disk_read(0, block.data);
+    if (block.super.signature == TFS_MAGIC)
+        printf("superblock:\n      signature is valid\n");
+    else
+        printf("superblock:\n      signature is invalid\n");
 
-	disk_read(0,block.data);
+    printf("      %d blocks total\n", block.super.num_blocks);
+    printf("      %d inodes total\n", block.super.num_inodes);
+    printf("      root inode = %d\n", block.super.root_inode);
 
-        // check signature
-        if(block.super.signature  == TFS_MAGIC)
-		printf("      signature is valid\n");
-	else
-		printf("      signature is invalid\n");
+    // Read and count block/inode usage from bitmap
+    disk_read(1, block.data);
 
-	disk_read(1,block.data);
-	for(i=0; i<NUM_BLOCKS; i++)
-           if(block.bmap.block_in_use[i/BITS_PER_UINT] & (1 <<(i%BITS_PER_UINT)))
-		 b_in_use++ ;  
-        printf("      %d blocks in use \n", b_in_use); 
+    int b_in_use = 0, i_in_use = 0;
+    for (i = 0; i < NUM_BLOCKS; i++)
+        if (block.bmap.block_in_use[i / BITS_PER_UINT] & (1 << (i % BITS_PER_UINT)))
+            b_in_use++;
 
-        // count inodes in use 
-	
+    for (i = 0; i < NUM_INODES; i++)
+        if (block.bmap.inode_in_use[i / BITS_PER_UINT] & (1 << (i % BITS_PER_UINT)))
+            i_in_use++;
 
-        
-	// explore root directory
+    printf("      %d blocks in use\n", b_in_use);
+    printf("      %d inodes in use\n", i_in_use);
 
+    // Loop through inode blocks
+    for (int b = 2; b < NUM_BLOCKS; b++) {
+        disk_read(b, block.data);
+        for (int j = 0; j < INODES_PER_BLOCK; j++) {
+            struct tfs_inode *inode = &block.inode[j];
 
+            if (inode->type == REGULAR || inode->type == DIR) {
+                int inum = (b - 2) * INODES_PER_BLOCK + j;
+                printf("inode %d:\n", inum);
+                printf("      type = %s\n", inode->type == REGULAR ? "REGULAR" : "DIR");
+                printf("      size = %d\n", inode->size);
+
+                for (int k = 0; k < POINTERS_PER_INODE; k++)
+                    if (inode->direct[k])
+                        printf("      direct[%d] = %d\n", k, inode->direct[k]);
+
+                if (inode->indirect) {
+                    printf("      indirect = %d\n", inode->indirect);
+
+                    union tfs_block indirect_block;
+                    disk_read(inode->indirect, indirect_block.data);
+                    for (int k = 0; k < POINTERS_PER_BLOCK; k++) {
+                        if (indirect_block.pointers[k])
+                            printf("        indirect[%d] = %d\n", k, indirect_block.pointers[k]);
+                    }
+                }
+            }
+        }
+    }
 }
+
 
 int tfs_delete(const  char *filename )
 {

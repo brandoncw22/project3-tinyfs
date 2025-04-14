@@ -132,7 +132,7 @@ int tfs_delete(const  char *filename )
 int tfs_get_inumber(const char *filename)
 {
     union tfs_block block;
-    union tfs_block dblock; // ✅ Add this here
+    union tfs_block dblock;
 
     // Load the inode block containing root inode (inode 1 is at block 2)
     disk_read(2, block.data);

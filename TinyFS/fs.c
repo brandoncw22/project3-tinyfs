@@ -129,15 +129,58 @@ int tfs_delete(const  char *filename )
 	return 0;
 }
 
-int tfs_get_inumber(const  char *filename )
+int tfs_get_inumber(const char *filename)
 {
-	return 0;
+    union tfs_block block;
+    union tfs_block dblock; // ✅ Add this here
+
+    // Load the inode block containing root inode (inode 1 is at block 2)
+    disk_read(2, block.data);
+    struct tfs_inode root = block.inode[1];  // inode 1 = root
+
+    printf("DEBUG: root direct[0] = %d\n", root.direct[0]);
+
+    // Read the first directory block (like block 3)
+    disk_read(root.direct[0], dblock.data);
+
+    for (int j = 0; j < NUM_DENTRIES_PER_BLOCK; j++) {
+        printf("DEBUG: entry[%d] valid = %d, name = %s, inum = %d\n",
+               j, dblock.dentry[j].valid, dblock.dentry[j].fname, dblock.dentry[j].inum);
+    }
+
+    // Actual file lookup
+    for (int i = 0; i < POINTERS_PER_INODE; i++) {
+        if (root.direct[i] == 0)
+            continue;
+
+        disk_read(root.direct[i], dblock.data);
+        for (int j = 0; j < NUM_DENTRIES_PER_BLOCK; j++) {
+            if (dblock.dentry[j].valid &&
+                strcmp(dblock.dentry[j].fname, filename) == 0) {
+                return dblock.dentry[j].inum;
+            }
+        }
+    }
+
+    return -1;  // not found
 }
 
-int tfs_getsize(const  char *filename )
+
+int tfs_getsize(const char *filename)
 {
-	return -1;
+    int inum = tfs_get_inumber(filename);
+    if (inum < 0)
+        return -1;
+
+    int block_num = (inum / INODES_PER_BLOCK) + 2;
+    int index = inum % INODES_PER_BLOCK;
+
+    union tfs_block block;
+    disk_read(block_num, block.data);
+
+    return block.inode[index].size;
 }
+
 
 int tfs_read( int inumber,  char *data, int length, int offset )
 {
